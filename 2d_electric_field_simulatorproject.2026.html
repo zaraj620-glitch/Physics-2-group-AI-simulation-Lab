@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Electric Field & Voltage Simulator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Supabase JS Client CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    },
+                    colors: {
+                        proton: '#f87171',
+                        electron: '#38bdf8',
+                        probe: '#facc15'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #090d16;
+            color: #f8fafc;
+            overflow: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        input[type=range] {
+            accent-color: #38bdf8;
+        }
+
+        canvas {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col md:flex-row overflow-hidden select-none">
+
+    <!-- Left Control Sidebar -->
+    <div id="sidebar" class="w-full md:w-[420px] h-1/2 md:h-full flex flex-col z-10 glass-panel border-r border-slate-800 shadow-2xl transition-all duration-300 overflow-y-auto">
+        <!-- Header -->
+        <div class="p-4 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/80 sticky top-0 z-20">
+            <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-amber-500/20 text-amber-400 rounded-xl border border-amber-500/30">
+                    <i class="fa-solid fa-bolt text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base text-slate-100 leading-tight">2D Electric Field Lab</h1>
+                    <p class="text-xs text-slate-400">Electrostatics & Potential Field Simulator</p>
+                </div>
+            </div>
+            <button id="btn-toggle-sidebar" class="md:hidden text-slate-400 hover:text-white p-2">
+                <i class="fa-solid fa-chevron-down"></i>
+            </button>
+        </div>
+
+        <div class="p-4 space-y-5 flex-1">
+
+            <!-- Mode Selector / Action Palette -->
+            <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 space-y-2.5">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Placement Mode</span>
+                <div class="grid grid-cols-3 gap-2">
+                    <button id="tool-proton" class="tool-btn flex flex-col items-center justify-center p-2 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition-all active:scale-95">
+                        <i class="fa-solid fa-circle-plus text-base mb-1"></i>
+                        <span class="text-[11px] font-medium">+ Proton</span>
+                    </button>
+                    <button id="tool-electron" class="tool-btn flex flex-col items-center justify-center p-2 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:bg-sky-500/30 transition-all active:scale-95">
+                        <i class="fa-solid fa-circle-minus text-base mb-1"></i>
+                        <span class="text-[11px] font-medium">- Electron</span>
+                    </button>
+                    <button id="tool-probe" class="tool-btn flex flex-col items-center justify-center p-2 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 transition-all active:scale-95">
+                        <i class="fa-solid fa-crosshairs text-base mb-1"></i>
+                        <span class="text-[11px] font-medium">Test Probe</span>
+                    </button>
+                </div>
+                <div class="flex items-center justify-between pt-1">
+                    <span class="text-xs text-slate-400">Click canvas to place • Drag items to move</span>
+                    <button id="btn-clear" class="px-2.5 py-1 bg-slate-800 hover:bg-rose-900/50 hover:text-rose-300 text-slate-300 border border-slate-700 rounded-lg text-xs transition-all">
+                        <i class="fa-solid fa-trash-can mr-1"></i> Clear
+                    </button>
+                </div>
+            </div>
+
+            <!-- Test Charge Real-time Probe Metrics -->
+            <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center space-x-1.5">
+                        <i class="fa-solid fa-crosshairs text-amber-400"></i>
+                        <span>Probe Readouts</span>
+                    </span>
+                    <div class="flex items-center space-x-2">
+                        <span class="text-[11px] text-slate-400">q<sub>test</sub>:</span>
+                        <input type="number" id="input-qtest" value="1.0" step="0.5" class="w-14 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-xs font-mono text-amber-400 focus:outline-none focus:border-amber-500 text-center">
+                        <span class="text-[11px] text-slate-400">C</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="p-2 bg-slate-800/60 rounded-lg border border-slate-700/50">
+                        <div class="text-slate-400 text-[10px]">E-Field Magnitude (|E|)</div>
+                        <div id="readout-e-mag" class="text-sm font-mono font-semibold text-amber-400">0.00 N/C</div>
+                    </div>
+                    <div class="p-2 bg-slate-800/60 rounded-lg border border-slate-700/50">
+                        <div class="text-slate-400 text-[10px]">Electric Potential (V)</div>
+                        <div id="readout-v" class="text-sm font-mono font-semibold text-purple-400">0.00 V</div>
+                    </div>
+                    <div class="p-2 bg-slate-800/60 rounded-lg border border-slate-700/50">
+                        <div class="text-slate-400 text-[10px]">Field Components (E<sub>x</sub>, E<sub>y</sub>)</div>
+                        <div id="readout-e-comp" class="text-xs font-mono text-sky-400">(0.00, 0.00)</div>
+                    </div>
+                    <div class="p-2 bg-slate-800/60 rounded-lg border border-slate-700/50">
+                        <div class="text-slate-400 text-[10px]">Force Component (F<sub>x</sub>, F<sub>y</sub>)</div>
+                        <div id="readout-f-comp" class="text-xs font-mono text-emerald-400">(0.00, 0.00)</div>
+                    </div>
+                    <div class="p-2 bg-slate-800/60 rounded-lg border border-slate-700/50">
+                        <div class="text-slate-400 text-[10px]">Total Force (|F|)</div>
+                        <div id="readout-f-mag" class="text-sm font-mono font-semibold text-emerald-400">0.00 N</div>
+                    </div>
+                    <div class="p-2 bg-slate-800/60 rounded-lg border border-slate-700/50">
+                        <div class="text-slate-400 text-[10px]">Vector Angle (θ)</div>
+                        <div id="readout-angle" class="text-sm font-mono font-semibold text-slate-200">0.0°</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Visualization & Display Toggles -->
+            <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 space-y-3">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Field Settings</span>
+                
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <label class="flex items-center space-x-2 cursor-pointer p-1.5 bg-slate-800/50 rounded-lg hover:bg-slate-800">
+                        <input type="checkbox" id="chk-grid" checked class="rounded border-slate-700 text-sky-500 focus:ring-0">
+                        <span>Vector Grid</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer p-1.5 bg-slate-800/50 rounded-lg hover:bg-slate-800">
+                        <input type="checkbox" id="chk-voltage" checked class="rounded border-slate-700 text-purple-500 focus:ring-0">
+                        <span>Voltage Heatmap</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer p-1.5 bg-slate-800/50 rounded-lg hover:bg-slate-800">
+                        <input type="checkbox" id="chk-force" checked class="rounded border-slate-700 text-emerald-500 focus:ring-0">
+                        <span>Probe Force Arrow</span>
+                    </label>
+                    <label class="flex items-center space-x-2 cursor-pointer p-1.5 bg-slate-800/50 rounded-lg hover:bg-slate-800">
+                        <input type="checkbox" id="chk-values" class="rounded border-slate-700 text-amber-500 focus:ring-0">
+                        <span>Field Mag Labels</span>
+                    </label>
+                </div>
+
+                <div class="space-y-1 pt-1">
+                    <div class="flex justify-between text-xs text-slate-300">
+                        <span>Grid Spacing Density:</span>
+                        <span id="val-grid-spacing" class="font-mono text-sky-400">30 px</span>
+                    </div>
+                    <input type="range" id="input-grid-spacing" min="20" max="60" step="5" value="30" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+            </div>
+
+            <!-- Presets Section -->
+            <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 space-y-2.5">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Physical Presets</span>
+                <div class="grid grid-cols-2 gap-2">
+                    <button class="btn-preset py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs text-slate-200 transition-all text-left" data-preset="dipole">
+                        ⚡ Dipole (+ / -)
+                    </button>
+                    <button class="btn-preset py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs text-slate-200 transition-all text-left" data-preset="quadrupole">
+                        ⚛️ Quadrupole
+                    </button>
+                    <button class="btn-preset py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs text-slate-200 transition-all text-left" data-preset="capacitor">
+                        🔋 Parallel Capacitor
+                    </button>
+                    <button class="btn-preset py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs text-slate-200 transition-all text-left" data-preset="line">
+                        🔴 Charge Line (+5)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Supabase Database Storage Section -->
+            <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-database text-emerald-400 text-xs"></i>
+                        <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Cloud Storage</span>
+                    </div>
+                    <span id="db-status" class="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">Local Fallback</span>
+                </div>
+
+                <details class="text-xs text-slate-400">
+                    <summary class="cursor-pointer hover:text-slate-200 transition-colors py-1 flex items-center justify-between">
+                        <span>Supabase Config</span>
+                        <i class="fa-solid fa-gear text-[10px]"></i>
+                    </summary>
+                    <div class="space-y-2 pt-2">
+                        <input type="text" id="supabase-url" placeholder="Supabase Project URL" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-white focus:outline-none focus:border-emerald-500">
+                        <input type="password" id="supabase-key" placeholder="Supabase Anon Key" class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-[11px] font-mono text-white focus:outline-none focus:border-emerald-500">
+                        <button id="btn-connect-db" class="w-full py-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded text-xs text-slate-200 font-medium">
+                            Connect Database
+                        </button>
+                    </div>
+                </details>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-save-db" class="flex items-center justify-center space-x-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition-all shadow-lg shadow-emerald-600/20">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span>Save Layout</span>
+                    </button>
+                    <button id="btn-load-db" class="flex items-center justify-center space-x-1 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-medium text-xs rounded-lg transition-all">
+                        <i class="fa-solid fa-folder-open"></i>
+                        <span>Load Saved</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mathematical Formulas Info Card -->
+            <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 text-xs space-y-1.5 text-slate-300">
+                <div class="font-semibold text-slate-200 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-square-root-variable text-sky-400"></i>
+                    <span>Governing Physics Equations</span>
+                </div>
+                <div class="font-mono text-[11px] bg-slate-950/80 p-2 rounded border border-slate-800 space-y-1">
+                    <div><b>Electric Field:</b> <span class="text-sky-400">E = k ∑ (q<sub>i</sub> / r<sub>i</sub>²) r̂<sub>i</sub></span></div>
+                    <div><b>Lorentz Force:</b> <span class="text-emerald-400">F = q<sub>test</sub> · E</span></div>
+                    <div><b>Potential (V):</b> <span class="text-purple-400">V = k ∑ (q<sub>i</sub> / r<sub>i</sub>)</span></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Canvas Interactive Viewport -->
+    <div id="canvas-container" class="relative flex-1 h-1/2 md:h-full bg-slate-950 overflow-hidden">
+        <canvas id="fieldCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+
+        <!-- Canvas Legend Overlay -->
+        <div class="absolute top-4 left-4 z-10 flex flex-wrap gap-2 pointer-events-none">
+            <div class="px-3 py-1.5 rounded-lg glass-panel text-xs text-slate-300 flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-rose-500 inline-block shadow-md shadow-rose-500/50"></span>
+                <span>Proton (+1e)</span>
+            </div>
+            <div class="px-3 py-1.5 rounded-lg glass-panel text-xs text-slate-300 flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-sky-400 inline-block shadow-md shadow-sky-400/50"></span>
+                <span>Electron (-1e)</span>
+            </div>
+            <div class="px-3 py-1.5 rounded-lg glass-panel text-xs text-slate-300 flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-amber-400 inline-block shadow-md shadow-amber-400/50"></span>
+                <span>Test Probe</span>
+            </div>
+        </div>
+
+        <div class="absolute bottom-4 right-4 z-10 glass-panel p-2.5 rounded-xl text-[11px] text-slate-400 flex items-center space-x-2 pointer-events-none">
+            <i class="fa-solid fa-hand-pointer text-amber-400"></i>
+            <span>Drag charges or probe • Click canvas to place selected tool</span>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div id="toast-container" class="absolute top-4 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+    </div>
+
+    <!-- Modal for Saved Database Configurations -->
+    <div id="runs-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-xl rounded-2xl border border-slate-700/60 p-6 flex flex-col max-h-[80vh] shadow-2xl">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-700/50">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-folder-open text-amber-400 text-lg"></i>
+                    <h2 class="font-bold text-lg text-slate-100">Saved Layout Configurations</h2>
+                </div>
+                <button id="close-modal-btn" class="text-slate-400 hover:text-white text-lg p-1">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto my-4 space-y-2 pr-1" id="saved-runs-list">
+                <!-- Dynamically populated -->
+            </div>
+
+            <div class="pt-3 border-t border-slate-700/50 flex justify-between items-center text-xs text-slate-400">
+                <span id="modal-db-info">Database Records</span>
+                <button id="close-modal-footer" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Constants & Physics Units ---
+        const K_COULOMB = 8.98755e3; // Scaled Coulomb constant for pixel visualization
+        const PROTON_CHARGE = 1.0;
+        const ELECTRON_CHARGE = -1.0;
+
+        // --- Application State ---
+        const state = {
+            activeTool: 'proton', // 'proton', 'electron', 'probe'
+            charges: [],          // [{x, y, q, id, fixed}]
+            probe: { x: 300, y: 300, q: 1.0 },
+            dragTarget: null,     // Reference to currently dragged charge or probe
+            dragOffset: { x: 0, y: 0 },
+            gridSpacing: 30,
+            showGrid: true,
+            showVoltage: true,
+            showForceArrow: true,
+            showValues: false,
+            supabaseClient: null,
+            useLocalDB: true
+        };
+
+        // --- DOM Elements ---
+        const canvas = document.getElementById('fieldCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        const readoutEMag = document.getElementById('readout-e-mag');
+        const readoutEComp = document.getElementById('readout-e-comp');
+        const readoutV = document.getElementById('readout-v');
+        const readoutFMag = document.getElementById('readout-f-mag');
+        const readoutFComp = document.getElementById('readout-f-comp');
+        const readoutAngle = document.getElementById('readout-angle');
+        const inputQTest = document.getElementById('input-qtest');
+
+        const chkGrid = document.getElementById('chk-grid');
+        const chkVoltage = document.getElementById('chk-voltage');
+        const chkForce = document.getElementById('chk-force');
+        const chkValues = document.getElementById('chk-values');
+        const inputGridSpacing = document.getElementById('input-grid-spacing');
+        const valGridSpacing = document.getElementById('val-grid-spacing');
+
+        // Resize Canvas dynamically
+        function resizeCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            render();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // --- Physics Calculations Superposition ---
+        function calculateFieldAndVoltage(x, y) {
+            let Ex = 0;
+            let Ey = 0;
+            let V = 0;
+
+            for (const c of state.charges) {
+                const dx = x - c.x;
+                const dy = y - c.y;
+                const r2 = dx * dx + dy * dy;
+                const r = Math.sqrt(r2);
+
+                if (r < 8) continue; // Softening parameter to prevent infinity singularity
+
+                // E = k * q / r^2
+                const E_mag = (K_COULOMB * c.q) / r2;
+                Ex += E_mag * (dx / r);
+                Ey += E_mag * (dy / r);
+
+                // V = k * q / r
+                V += (K_COULOMB * c.q) / r;
+            }
+
+            return { Ex, Ey, E_mag: Math.sqrt(Ex * Ex + Ey * Ey), V };
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw Electric Potential (Voltage V) Background Heatmap
+            if (state.showVoltage && state.charges.length > 0) {
+                const step = 10;
+                for (let x = 0; x < canvas.width; x += step) {
+                    for (let y = 0; y < canvas.height; y += step) {
+                        const { V } = calculateFieldAndVoltage(x + step / 2, y + step / 2);
+                        
+                        // Normalize voltage color map (-255 = Blue, +255 = Red)
+                        const clampedV = Math.max(-200, Math.min(200, V));
+                        let color;
+                        if (clampedV > 0) {
+                            const intensity = Math.floor((clampedV / 200) * 180);
+                            color = `rgba(239, 68, 68, ${intensity / 255 * 0.45})`;
+                        } else {
+                            const intensity = Math.floor((-clampedV / 200) * 180);
+                            color = `rgba(56, 189, 248, ${intensity / 255 * 0.45})`;
+                        }
+                        ctx.fillStyle = color;
+                        ctx.fillRect(x, y, step, step);
+                    }
+                }
+            }
+
+            // 2. Draw Electric Field Vector Grid Arrows
+            if (state.showGrid) {
+                const spacing = state.gridSpacing;
+                for (let x = spacing / 2; x < canvas.width; x += spacing) {
+                    for (let y = spacing / 2; y < canvas.height; y += spacing) {
+                        const { Ex, Ey, E_mag } = calculateFieldAndVoltage(x, y);
+
+                        if (E_mag < 0.01) continue;
+
+                        const angle = Math.atan2(Ey, Ex);
+                        const len = Math.min(spacing * 0.8, Math.max(8, Math.log(E_mag + 1) * 6));
+
+                        ctx.save();
+                        ctx.translate(x, y);
+                        ctx.rotate(angle);
+
+                        // Color arrow according to field strength
+                        const opacity = Math.min(0.85, Math.max(0.2, E_mag / 50));
+                        ctx.strokeStyle = `rgba(148, 163, 184, ${opacity})`;
+                        ctx.fillStyle = `rgba(148, 163, 184, ${opacity})`;
+                        ctx.lineWidth = 1.2;
+
+                        // Draw Arrow
+                        ctx.beginPath();
+                        ctx.moveTo(-len / 2, 0);
+                        ctx.lineTo(len / 2, 0);
+                        ctx.stroke();
+
+                        ctx.beginPath();
+                        ctx.moveTo(len / 2, 0);
+                        ctx.lineTo(len / 2 - 4, -3);
+                        ctx.lineTo(len / 2 - 4, 3);
+                        ctx.closePath();
+                        ctx.fill();
+
+                        ctx.restore();
+
+                        if (state.showValues && E_mag > 0.5) {
+                            ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+                            ctx.font = '8px JetBrains Mono';
+                            ctx.fillText(E_mag.toFixed(0), x - 8, y + spacing / 2 - 2);
+                        }
+                    }
+                }
+            }
+
+            // 3. Draw Charges (Protons & Electrons)
+            for (const c of state.charges) {
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, 16, 0, Math.PI * 2);
+                
+                if (c.q > 0) {
+                    ctx.fillStyle = '#f87171'; // Proton
+                    ctx.shadowColor = 'rgba(248, 113, 113, 0.6)';
+                } else {
+                    ctx.fillStyle = '#38bdf8'; // Electron
+                    ctx.shadowColor = 'rgba(56, 189, 248, 0.6)';
+                }
+
+                ctx.shadowBlur = 15;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw Symbol (+ / -)
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 18px Inter';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(c.q > 0 ? '+' : '−', c.x, c.y);
+            }
+
+            // 4. Draw Test Probe & Force Vector
+            if (state.probe) {
+                const px = state.probe.x;
+                const py = state.probe.y;
+
+                // Probe Outer Circle
+                ctx.beginPath();
+                ctx.arc(px, py, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#facc15';
+                ctx.shadowColor = 'rgba(250, 204, 21, 0.8)';
+                ctx.shadowBlur = 12;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Crosshair icon
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(px - 6, py); ctx.lineTo(px + 6, py);
+                ctx.moveTo(px, py - 6); ctx.lineTo(px, py + 6);
+                ctx.stroke();
+
+                // Calculate force at probe
+                const { Ex, Ey, E_mag, V } = calculateFieldAndVoltage(px, py);
+                const Fx = state.probe.q * Ex;
+                const Fy = state.probe.q * Ey;
+                const F_mag = Math.sqrt(Fx * Fx + Fy * Fy);
+
+                // Update UI Readout panels
+                readoutEMag.textContent = `${E_mag.toFixed(2)} N/C`;
+                readoutEComp.textContent = `(${Ex.toFixed(1)}, ${Ey.toFixed(1)})`;
+                readoutV.textContent = `${V.toFixed(2)} V`;
+                readoutFMag.textContent = `${F_mag.toFixed(2)} N`;
+                readoutFComp.textContent = `(${Fx.toFixed(1)}, ${Fy.toFixed(1)})`;
+
+                const angleRad = Math.atan2(Fy, Fx);
+                let angleDeg = (angleRad * 180 / Math.PI).toFixed(1);
+                if (angleDeg < 0) angleDeg = (parseFloat(angleDeg) + 360).toFixed(1);
+                readoutAngle.textContent = `${angleDeg}°`;
+
+                // Draw Force Arrow from Probe
+                if (state.showForceArrow && F_mag > 0.05) {
+                    const arrowLen = Math.min(100, Math.max(20, Math.log(F_mag + 1) * 20));
+
+                    ctx.save();
+                    ctx.translate(px, py);
+                    ctx.rotate(angleRad);
+
+                    ctx.strokeStyle = '#4ade80'; // Emerald Green Force Arrow
+                    ctx.fillStyle = '#4ade80';
+                    ctx.lineWidth = 3.5;
+
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(arrowLen, 0);
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.moveTo(arrowLen, 0);
+                    ctx.lineTo(arrowLen - 8, -6);
+                    ctx.lineTo(arrowLen - 8, 6);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+            }
+        }
+
+        // Mouse / Touch Dragging Logic
+        function getCanvasCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const pos = getCanvasCoordinates(e);
+
+            // Check if clicking on Probe
+            const distProbe = Math.hypot(pos.x - state.probe.x, pos.y - state.probe.y);
+            if (distProbe < 20) {
+                state.dragTarget = 'probe';
+                return;
+            }
+
+            // Check if clicking on existing charges
+            for (let i = state.charges.length - 1; i >= 0; i--) {
+                const c = state.charges[i];
+                const dist = Math.hypot(pos.x - c.x, pos.y - c.y);
+                if (dist < 20) {
+                    state.dragTarget = c;
+                    return;
+                }
+            }
+
+            // If empty canvas, place active tool
+            if (state.activeTool === 'proton') {
+                state.charges.push({ x: pos.x, y: pos.y, q: PROTON_CHARGE, id: Date.now() });
+            } else if (state.activeTool === 'electron') {
+                state.charges.push({ x: pos.x, y: pos.y, q: ELECTRON_CHARGE, id: Date.now() });
+            } else if (state.activeTool === 'probe') {
+                state.probe.x = pos.x;
+                state.probe.y = pos.y;
+            }
+            render();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!state.dragTarget) return;
+            const pos = getCanvasCoordinates(e);
+
+            if (state.dragTarget === 'probe') {
+                state.probe.x = pos.x;
+                state.probe.y = pos.y;
+            } else {
+                state.dragTarget.x = pos.x;
+                state.dragTarget.y = pos.y;
+            }
+            render();
+        });
+
+        window.addEventListener('mouseup', () => {
+            state.dragTarget = null;
+        });
+
+        // Right-click to remove charge
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const pos = getCanvasCoordinates(e);
+
+            for (let i = state.charges.length - 1; i >= 0; i--) {
+                const c = state.charges[i];
+                if (Math.hypot(pos.x - c.x, pos.y - c.y) < 20) {
+                    state.charges.splice(i, 1);
+                    render();
+                    showToast('Removed charge', 'info');
+                    return;
+                }
+            }
+        });
+
+        // Tool buttons active state binding
+        const toolBtns = {
+            proton: document.getElementById('tool-proton'),
+            electron: document.getElementById('tool-electron'),
+            probe: document.getElementById('tool-probe')
+        };
+
+        function setTool(toolName) {
+            state.activeTool = toolName;
+            Object.keys(toolBtns).forEach(k => {
+                if (k === toolName) {
+                    toolBtns[k].classList.add('ring-2', 'ring-amber-400');
+                } else {
+                    toolBtns[k].classList.remove('ring-2', 'ring-amber-400');
+                }
+            });
+        }
+
+        toolBtns.proton.addEventListener('click', () => setTool('proton'));
+        toolBtns.electron.addEventListener('click', () => setTool('electron'));
+        toolBtns.probe.addEventListener('click', () => setTool('probe'));
+        setTool('proton');
+
+        // Checkbox & Range Controls Binding
+        chkGrid.addEventListener('change', (e) => { state.showGrid = e.target.checked; render(); });
+        chkVoltage.addEventListener('change', (e) => { state.showVoltage = e.target.checked; render(); });
+        chkForce.addEventListener('change', (e) => { state.showForceArrow = e.target.checked; render(); });
+        chkValues.addEventListener('change', (e) => { state.showValues = e.target.checked; render(); });
+
+        inputGridSpacing.addEventListener('input', (e) => {
+            state.gridSpacing = parseInt(e.target.value);
+            valGridSpacing.textContent = `${state.gridSpacing} px`;
+            render();
+        });
+
+        inputQTest.addEventListener('input', (e) => {
+            state.probe.q = parseFloat(e.target.value) || 1.0;
+            render();
+        });
+
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            state.charges = [];
+            render();
+            showToast('Canvas cleared', 'info');
+        });
+
+        // Preset Quick Setups
+        function loadPreset(type) {
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            state.charges = [];
+
+            if (type === 'dipole') {
+                state.charges.push({ x: cx - 120, y: cy, q: PROTON_CHARGE, id: 1 });
+                state.charges.push({ x: cx + 120, y: cy, q: ELECTRON_CHARGE, id: 2 });
+                state.probe.x = cx; state.probe.y = cy - 80;
+            } else if (type === 'quadrupole') {
+                state.charges.push({ x: cx - 90, y: cy - 90, q: PROTON_CHARGE, id: 1 });
+                state.charges.push({ x: cx + 90, y: cy - 90, q: ELECTRON_CHARGE, id: 2 });
+                state.charges.push({ x: cx - 90, y: cy + 90, q: ELECTRON_CHARGE, id: 3 });
+                state.charges.push({ x: cx + 90, y: cy + 90, q: PROTON_CHARGE, id: 4 });
+                state.probe.x = cx; state.probe.y = cy;
+            } else if (type === 'capacitor') {
+                for (let i = -3; i <= 3; i++) {
+                    state.charges.push({ x: cx + i * 40, y: cy - 100, q: PROTON_CHARGE, id: Date.now() + i });
+                    state.charges.push({ x: cx + i * 40, y: cy + 100, q: ELECTRON_CHARGE, id: Date.now() + i + 100 });
+                }
+                state.probe.x = cx; state.probe.y = cy;
+            } else if (type === 'line') {
+                for (let i = -2; i <= 2; i++) {
+                    state.charges.push({ x: cx + i * 50, y: cy, q: PROTON_CHARGE, id: Date.now() + i });
+                }
+                state.probe.x = cx; state.probe.y = cy - 120;
+            }
+            render();
+            showToast(`Loaded ${type} preset`, 'success');
+        }
+
+        document.querySelectorAll('.btn-preset').forEach(btn => {
+            btn.addEventListener('click', (e) => loadPreset(e.currentTarget.getAttribute('data-preset')));
+        });
+
+        // Database & Storage Logic
+        function initDatabase() {
+            const btnConnect = document.getElementById('btn-connect-db');
+            const btnSave = document.getElementById('btn-save-db');
+            const btnLoad = document.getElementById('btn-load-db');
+            const modal = document.getElementById('runs-modal');
+            const dbStatus = document.getElementById('db-status');
+
+            btnConnect.addEventListener('click', () => {
+                const url = document.getElementById('supabase-url').value.trim();
+                const key = document.getElementById('supabase-key').value.trim();
+
+                if (!url || !key) {
+                    showToast('Please enter both Supabase URL & Key', 'warning');
+                    return;
+                }
+
+                try {
+                    state.supabaseClient = supabase.createClient(url, key);
+                    state.useLocalDB = false;
+                    dbStatus.textContent = 'Supabase Connected';
+                    dbStatus.className = 'text-[10px] text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20';
+                    showToast('Connected to Supabase!', 'success');
+                } catch (err) {
+                    showToast('Supabase Error: ' + err.message, 'error');
+                }
+            });
+
+            btnSave.addEventListener('click', async () => {
+                const layoutData = {
+                    title: `Layout (${state.charges.length} charges) - ${new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`,
+                    charges: state.charges,
+                    probe: state.probe,
+                    created_at: new Date().toISOString()
+                };
+
+                if (!state.useLocalDB && state.supabaseClient) {
+                    try {
+                        const { error } = await state.supabaseClient
+                            .from('electric_field_configs')
+                            .insert([layoutData]);
+                        if (error) throw error;
+                        showToast('Saved to Supabase database!', 'success');
+                    } catch (err) {
+                        showToast('Save Error: ' + err.message + '. Saved locally.', 'error');
+                        saveLocally(layoutData);
+                    }
+                } else {
+                    saveLocally(layoutData);
+                    showToast('Saved layout locally!', 'success');
+                }
+            });
+
+            btnLoad.addEventListener('click', async () => {
+                modal.classList.remove('hidden');
+                fetchSavedLayouts();
+            });
+
+            document.getElementById('close-modal-btn').onclick = () => modal.classList.add('hidden');
+            document.getElementById('close-modal-footer').onclick = () => modal.classList.add('hidden');
+        }
+
+        function saveLocally(data) {
+            const existing = JSON.parse(localStorage.getItem('efield_configs') || '[]');
+            existing.unshift(data);
+            localStorage.setItem('efield_configs', JSON.stringify(existing.slice(0, 20)));
+        }
+
+        async function fetchSavedLayouts() {
+            const listContainer = document.getElementById('saved-runs-list');
+            listContainer.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">Loading...</div>';
+
+            let items = [];
+            if (!state.useLocalDB && state.supabaseClient) {
+                try {
+                    const { data, error } = await state.supabaseClient
+                        .from('electric_field_configs')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    if (error) throw error;
+                    items = data || [];
+                } catch (err) {
+                    items = JSON.parse(localStorage.getItem('efield_configs') || '[]');
+                }
+            } else {
+                items = JSON.parse(localStorage.getItem('efield_configs') || '[]');
+            }
+
+            if (items.length === 0) {
+                listContainer.innerHTML = '<div class="text-center py-6 text-slate-500 text-xs">No saved layouts found.</div>';
+                return;
+            }
+
+            listContainer.innerHTML = '';
+            items.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'p-3 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between';
+                card.innerHTML = `
+                    <div>
+                        <div class="font-bold text-xs text-slate-200">${item.title}</div>
+                        <div class="text-[10px] text-slate-500">${new Date(item.created_at).toLocaleString()}</div>
+                    </div>
+                    <button class="px-3 py-1 bg-sky-600/20 hover:bg-sky-600 text-sky-300 hover:text-white rounded text-xs">Load</button>
+                `;
+                card.querySelector('button').onclick = () => {
+                    state.charges = item.charges || [];
+                    if (item.probe) state.probe = item.probe;
+                    render();
+                    document.getElementById('runs-modal').classList.add('hidden');
+                    showToast('Layout loaded!', 'success');
+                };
+                listContainer.appendChild(card);
+            });
+        }
+
+        // Toast System
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            let bg = 'bg-slate-800 border-slate-700 text-slate-200';
+            if (type === 'success') bg = 'bg-emerald-950 border-emerald-500 text-emerald-100';
+            if (type === 'warning') bg = 'bg-amber-950 border-amber-500 text-amber-100';
+            if (type === 'error') bg = 'bg-rose-950 border-rose-500 text-rose-100';
+
+            toast.className = `p-3 rounded-xl border shadow-xl text-xs flex items-center space-x-2 transition-all transform translate-x-full ${bg}`;
+            toast.innerHTML = `<span>${msg}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => toast.classList.remove('translate-x-full'), 10);
+            setTimeout(() => {
+                toast.classList.add('translate-x-full', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // --- Initialization ---
+        window.onload = () => {
+            resizeCanvas();
+            initDatabase();
+            loadPreset('dipole');
+        };
+    </script>
+</body>
+</html>
